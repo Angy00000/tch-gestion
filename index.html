@@ -764,25 +764,35 @@ function updateCout(val){
 }
 
 function renderDepenses(){
-  const list = [...state.depenses].sort((a,b)=> b.date.localeCompare(a.date));
-  const total = list.reduce((s,d)=> s + d.montant, 0);
+  const total = state.depenses.reduce((s,d)=> s + d.montant, 0);
+  const groupes = [...state.arrivages].reverse().map(a=>{
+    const items = state.depenses.filter(d=>d.arrivageId===a.id).sort((x,y)=> y.date.localeCompare(x.date));
+    const sousTotal = items.reduce((s,d)=> s + d.montant, 0);
+    return {a, items, sousTotal};
+  }).filter(g=> g.items.length>0 || g.a.id===state.arrivageActif);
+
   return `
     <div class="viewhead"><div><div class="eyebrow">Sorties d'argent</div><h2>Dépenses</h2></div><button class="btn" onclick="openExpenseForm()">+ Nouvelle dépense</button></div>
     <div class="kpis" style="grid-template-columns:1fr;">
       <div class="kpi c-terracotta"><div class="label">Total des dépenses enregistrées</div><div class="value mono">${fmt(total)}</div></div>
     </div>
-    <div class="panel">
-      ${list.length===0 ? '<div class="empty">Aucune dépense enregistrée pour le moment.</div>' : `
-      <table><thead><tr><th>Date</th><th>Catégorie</th><th>Note</th><th>Montant</th><th>Vague</th><th></th></tr></thead>
-      <tbody>${list.map(d=>`<tr>
-        <td class="mono">${d.date}</td>
-        <td><span class="catpill" style="background:color-mix(in srgb, ${CATEGORIE_COLOR[d.categorie]} 16%, transparent);color:${CATEGORIE_COLOR[d.categorie]}"><span class="dot" style="background:${CATEGORIE_COLOR[d.categorie]}"></span>${d.categorie}</span></td>
-        <td>${d.note||'—'}</td>
-        <td class="mono">${fmt(d.montant)}</td>
-        <td>${arrivageNom(d.arrivageId)}</td>
-        <td><button class="btn ghost" onclick="deleteExpense('${d.id}')">Suppr.</button></td>
-      </tr>`).join('')}</tbody></table>`}
-    </div>
+    ${groupes.map(g=>`
+      <div class="panel">
+        <div class="panel-title">
+          <span>${g.a.nom}${g.a.id===state.arrivageActif?' <span class="pill s4">actif</span>':''}</span>
+          <span class="mono" style="color:var(--text);text-transform:none;letter-spacing:0;font-family:'Space Mono',monospace;">${fmt(g.sousTotal)}</span>
+        </div>
+        ${g.items.length===0 ? '<div class="empty">Aucune dépense sur cette vague pour le moment.</div>' : `
+        <table><thead><tr><th>Date</th><th>Catégorie</th><th>Note</th><th>Montant</th><th></th></tr></thead>
+        <tbody>${g.items.map(d=>`<tr>
+          <td class="mono">${d.date}</td>
+          <td><span class="catpill" style="background:color-mix(in srgb, ${CATEGORIE_COLOR[d.categorie]} 16%, transparent);color:${CATEGORIE_COLOR[d.categorie]}"><span class="dot" style="background:${CATEGORIE_COLOR[d.categorie]}"></span>${d.categorie}</span></td>
+          <td>${d.note||'—'}</td>
+          <td class="mono">${fmt(d.montant)}</td>
+          <td><button class="btn ghost" onclick="deleteExpense('${d.id}')">Suppr.</button></td>
+        </tr>`).join('')}</tbody></table>`}
+      </div>
+    `).join('')}
   `;
 }
 
