@@ -248,6 +248,7 @@ async function loadState(){
   if(!state.arrivages || state.arrivages.length===0) state.arrivages = [{id:"arrivage-1", nom:"1ère vague", statut:"actif"}];
   if(!state.arrivageActif) state.arrivageActif = state.arrivages[state.arrivages.length-1].id;
   state.commandes.forEach(c=>{ if(!c.arrivageId) c.arrivageId = state.arrivages[0].id; });
+  state.depenses.forEach(d=>{ if(!d.arrivageId) d.arrivageId = state.arrivages[0].id; });
   render();
   // Synchro en direct : si quelqu'un d'autre modifie, la vue se met à jour toute seule
   try{
@@ -522,17 +523,17 @@ function renderArrivages(){
     </div>
     <div class="hint">Chaque vague regroupe les commandes passées pendant cette période. Clôture la vague en cours pour générer son rapport et en démarrer une nouvelle.</div>
     <div class="panel">
-      <table><thead><tr><th>Vague</th><th>Statut</th><th>Commandes</th><th>Qté vendue</th><th>CA</th><th></th></tr></thead>
+      <table><thead><tr><th>Vague</th><th>Statut</th><th>Commandes</th><th>Qté vendue</th><th>CA</th><th>Dépenses</th><th>Bénéfice net</th><th></th></tr></thead>
       <tbody>${arrivages.map(a=>{
-        const cs = state.commandes.filter(c=>c.arrivageId===a.id && c.statut!=='Annulée');
-        const qty = cs.reduce((s,c)=>s+c.quantite,0);
-        const ca = cs.reduce((s,c)=>s+c.quantite*c.prixUnitaire,0);
+        const r = getRapportData(a.id);
         return `<tr>
           <td>${a.nom}${a.id===state.arrivageActif?' <span class="pill s4">actif</span>':' <span class="pill s2">clôturé</span>'}</td>
           <td>${a.statut}</td>
-          <td class="mono">${cs.length}</td>
-          <td class="mono">${qty}</td>
-          <td class="mono">${fmt(ca)}</td>
+          <td class="mono">${r.cs.length}</td>
+          <td class="mono">${r.qty}</td>
+          <td class="mono">${fmt(r.ca)}</td>
+          <td class="mono">${fmt(r.totalDepenses)}</td>
+          <td class="mono">${fmt(r.benefice)}</td>
           <td><button class="btn ghost" onclick="openArrivageReport('${a.id}')">Rapport</button></td>
         </tr>`;
       }).join('')}</tbody></table>
@@ -555,60 +556,92 @@ function cloturerArrivage(){
   showToast(`${nom} démarré`);
 }
 
-function openArrivageReport(id){
+function getRapportData(id){
   const a = state.arrivages.find(x=>x.id===id);
-  if(!a) return;
   const cs = state.commandes.filter(c=>c.arrivageId===id && c.statut!=='Annulée');
+  const ds = state.depenses.filter(d=>d.arrivageId===id);
   const qty = cs.reduce((s,c)=>s+c.quantite,0);
   const ca = cs.reduce((s,c)=>s+c.quantite*c.prixUnitaire,0);
-  const cout = cs.reduce((s,c)=>s+c.quantite*(state.settings.coutUnitaire||0),0);
-  const benefice = ca - cout;
+  const totalDepenses = ds.reduce((s,d)=>s+d.montant,0);
+  const benefice = ca - totalDepenses;
   const parProduit = {};
   PRODUITS.forEach(p=>parProduit[p]={qty:0,ca:0});
   cs.forEach(c=>{ parProduit[c.produit].qty += c.quantite; parProduit[c.produit].ca += c.quantite*c.prixUnitaire; });
+  const parCategorie = {};
+  CATEGORIES_DEPENSES.forEach(cat=>parCategorie[cat]=0);
+  ds.forEach(d=>{ parCategorie[d.categorie] = (parCategorie[d.categorie]||0) + d.montant; });
+  const parPaiement = {};
+  PAIEMENTS.forEach(p=>parPaiement[p]=0);
+  cs.forEach(c=>{ parPaiement[c.modePaiement] = (parPaiement[c.modePaiement]||0) + c.quantite*c.prixUnitaire; });
+  return {a, cs, ds, qty, ca, totalDepenses, benefice, parProduit, parCategorie, parPaiement};
+}
+
+function openArrivageReport(id){
+  const {a, cs, ds, qty, ca, totalDepenses, benefice, parProduit, parCategorie} = getRapportData(id);
+  if(!a) return;
 
   document.getElementById('modalBody').innerHTML = `
     <h3>Rapport — ${a.nom}</h3>
     <div class="kpis" style="grid-template-columns:repeat(2,1fr);">
       <div class="kpi c-gold"><div class="label">Chiffre d'affaires</div><div class="value mono">${fmt(ca)}</div></div>
-      <div class="kpi c-green"><div class="label">Bénéfice estimé</div><div class="value mono">${fmt(benefice)}</div></div>
-      <div class="kpi c-terracotta"><div class="label">Unités vendues</div><div class="value mono">${qty}</div></div>
-      <div class="kpi c-teal"><div class="label">Commandes</div><div class="value mono">${cs.length}</div></div>
+      <div class="kpi c-terracotta"><div class="label">Dépenses</div><div class="value mono">${fmt(totalDepenses)}</div></div>
+      <div class="kpi c-green"><div class="label">Bénéfice net</div><div class="value mono">${fmt(benefice)}</div></div>
+      <div class="kpi c-teal"><div class="label">Unités vendues</div><div class="value mono">${qty}</div></div>
     </div>
     <div class="panel-title" style="margin-top:14px;">Détail par modèle</div>
     <table><thead><tr><th>Modèle</th><th>Qté</th><th>CA</th></tr></thead>
     <tbody>${PRODUITS.map(p=>`<tr><td>${p}</td><td class="mono">${parProduit[p].qty}</td><td class="mono">${fmt(parProduit[p].ca)}</td></tr>`).join('')}</tbody></table>
+    <div class="panel-title" style="margin-top:14px;">Dépenses par catégorie</div>
+    <table><thead><tr><th>Catégorie</th><th>Montant</th></tr></thead>
+    <tbody>${ds.length===0 ? `<tr><td colspan="2" style="color:var(--text-faint);">Aucune dépense enregistrée sur cette vague</td></tr>` : CATEGORIES_DEPENSES.filter(cat=>parCategorie[cat]>0).map(cat=>`<tr><td>${cat}</td><td class="mono">${fmt(parCategorie[cat])}</td></tr>`).join('')}</tbody></table>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Fermer</button>
-      <button class="btn" onclick="telechargerRapport('${id}')">Télécharger le rapport</button>
+      <button class="btn" onclick="telechargerRapport('${id}')">Télécharger le rapport complet</button>
     </div>
   `;
   document.getElementById('overlay').classList.add('open');
 }
 
 function telechargerRapport(id){
-  const a = state.arrivages.find(x=>x.id===id);
+  const {a, cs, ds, qty, ca, totalDepenses, benefice, parProduit, parCategorie, parPaiement} = getRapportData(id);
   if(!a) return;
-  const cs = state.commandes.filter(c=>c.arrivageId===id && c.statut!=='Annulée');
-  const qty = cs.reduce((s,c)=>s+c.quantite,0);
-  const ca = cs.reduce((s,c)=>s+c.quantite*c.prixUnitaire,0);
-  const cout = cs.reduce((s,c)=>s+c.quantite*(state.settings.coutUnitaire||0),0);
-  const benefice = ca - cout;
-  const parProduit = {};
-  PRODUITS.forEach(p=>parProduit[p]={qty:0,ca:0});
-  cs.forEach(c=>{ parProduit[c.produit].qty += c.quantite; parProduit[c.produit].ca += c.quantite*c.prixUnitaire; });
 
   let txt = "TCH GESTION — RAPPORT DE VAGUE\n";
+  txt += "========================================\n";
   txt += `${a.nom} (${a.statut})\n`;
   txt += `Généré le ${new Date().toLocaleDateString('fr-FR')}\n\n`;
+
+  txt += "RÉSUMÉ FINANCIER\n";
+  txt += "----------------------------------------\n";
   txt += `Chiffre d'affaires : ${fmt(ca)} FCFA\n`;
-  txt += `Bénéfice estimé : ${fmt(benefice)} FCFA\n`;
+  txt += `Total des dépenses : ${fmt(totalDepenses)} FCFA\n`;
+  txt += `Bénéfice net : ${fmt(benefice)} FCFA\n`;
   txt += `Unités vendues : ${qty}\n`;
-  txt += `Commandes : ${cs.length}\n\n`;
-  txt += "Détail par modèle :\n";
+  txt += `Nombre de commandes : ${cs.length}\n`;
+  txt += `Nombre de dépenses : ${ds.length}\n\n`;
+
+  txt += "VENTES PAR MODÈLE\n";
+  txt += "----------------------------------------\n";
   PRODUITS.forEach(p=>{ txt += `- ${p} : ${parProduit[p].qty} unités — ${fmt(parProduit[p].ca)} FCFA\n`; });
-  txt += "\nDétail des commandes :\n";
-  cs.forEach(c=>{ txt += `${c.date} — ${c.clientNom} (${c.clientTel}) — ${c.produit} ${c.couleur} x${c.quantite} — ${fmt(c.quantite*c.prixUnitaire)} FCFA — ${c.modePaiement}\n`; });
+
+  txt += "\nVENTES PAR MODE DE PAIEMENT\n";
+  txt += "----------------------------------------\n";
+  PAIEMENTS.forEach(p=>{ if(parPaiement[p]>0) txt += `- ${p} : ${fmt(parPaiement[p])} FCFA\n`; });
+
+  txt += "\nDÉPENSES PAR CATÉGORIE\n";
+  txt += "----------------------------------------\n";
+  if(ds.length===0){ txt += "Aucune dépense enregistrée sur cette vague.\n"; }
+  else { CATEGORIES_DEPENSES.forEach(cat=>{ if(parCategorie[cat]>0) txt += `- ${cat} : ${fmt(parCategorie[cat])} FCFA\n`; }); }
+
+  txt += "\nDÉTAIL DES COMMANDES\n";
+  txt += "----------------------------------------\n";
+  if(cs.length===0){ txt += "Aucune commande sur cette vague.\n"; }
+  else { cs.forEach(c=>{ txt += `${c.date} — ${c.clientNom} (${c.clientTel}${c.quartier? ', '+c.quartier:''}) — ${c.produit} ${c.couleur} x${c.quantite} — ${fmt(c.quantite*c.prixUnitaire)} FCFA — ${c.modePaiement} — ${c.statut}\n`; }); }
+
+  txt += "\nDÉTAIL DES DÉPENSES\n";
+  txt += "----------------------------------------\n";
+  if(ds.length===0){ txt += "Aucune dépense sur cette vague.\n"; }
+  else { ds.forEach(d=>{ txt += `${d.date} — ${d.categorie} — ${fmt(d.montant)} FCFA${d.note? ' — '+d.note:''}\n`; }); }
 
   const blob = new Blob([txt], {type:'text/plain;charset=utf-8'});
   const url = URL.createObjectURL(blob);
@@ -698,12 +731,13 @@ function renderDepenses(){
     </div>
     <div class="panel">
       ${list.length===0 ? '<div class="empty">Aucune dépense enregistrée pour le moment.</div>' : `
-      <table><thead><tr><th>Date</th><th>Catégorie</th><th>Note</th><th>Montant</th><th></th></tr></thead>
+      <table><thead><tr><th>Date</th><th>Catégorie</th><th>Note</th><th>Montant</th><th>Vague</th><th></th></tr></thead>
       <tbody>${list.map(d=>`<tr>
         <td class="mono">${d.date}</td>
         <td><span class="catpill" style="background:color-mix(in srgb, ${CATEGORIE_COLOR[d.categorie]} 16%, transparent);color:${CATEGORIE_COLOR[d.categorie]}"><span class="dot" style="background:${CATEGORIE_COLOR[d.categorie]}"></span>${d.categorie}</span></td>
         <td>${d.note||'—'}</td>
         <td class="mono">${fmt(d.montant)}</td>
+        <td>${arrivageNom(d.arrivageId)}</td>
         <td><button class="btn ghost" onclick="deleteExpense('${d.id}')">Suppr.</button></td>
       </tr>`).join('')}</tbody></table>`}
     </div>
@@ -733,7 +767,7 @@ function submitExpense(){
   const date = document.getElementById('d-date').value || new Date().toISOString().slice(0,10);
   const note = document.getElementById('d-note').value.trim();
   if(montant<=0){ showToast("Indique un montant valide"); return; }
-  state.depenses.push({ id: Date.now().toString(), date, categorie, montant, note });
+  state.depenses.push({ id: Date.now().toString(), date, categorie, montant, note, arrivageId: state.arrivageActif });
   saveState();
   closeModal();
   render();
