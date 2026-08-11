@@ -204,7 +204,7 @@ const CATEGORIE_COLOR = {
 };
 const SEUIL_BAS = 3;
 
-let state = { stock:{}, commandes:[], depenses:[], caisse:[], settings:{coutUnitaire:4000} };
+let state = { stock:{}, commandes:[], depenses:[], caisse:[], settings:{coutUnitaire:4000}, arrivages:[{id:"arrivage-1", nom:"1er arrivage", statut:"actif"}], arrivageActif:"arrivage-1" };
 let view = "dashboard";
 
 function defaultStock(){
@@ -245,6 +245,9 @@ async function loadState(){
   if(!state.depenses) state.depenses = [];
   if(!state.caisse) state.caisse = [];
   if(!state.settings) state.settings = {coutUnitaire:4000};
+  if(!state.arrivages || state.arrivages.length===0) state.arrivages = [{id:"arrivage-1", nom:"1er arrivage", statut:"actif"}];
+  if(!state.arrivageActif) state.arrivageActif = state.arrivages[state.arrivages.length-1].id;
+  state.commandes.forEach(c=>{ if(!c.arrivageId) c.arrivageId = state.arrivages[0].id; });
   render();
   // Synchro en direct : si quelqu'un d'autre modifie, la vue se met à jour toute seule
   try{
@@ -295,8 +298,9 @@ function renderNav(){
     {id:'finances', label:'Finances', num:'05', icon:'<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.3c0-1.1 1.1-2 2.5-2s2.5.7 2.5 1.8c0 2.6-5 1.2-5 3.8 0 1.1 1.1 1.9 2.5 1.9s2.5-.8 2.5-1.9"/>'},
     {id:'depenses', label:'Dépenses', num:'06', icon:'<path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M8.5 8h7M8.5 11.5h7M8.5 15h4"/>'},
     {id:'caisse', label:'Caisse', num:'07', icon:'<rect x="2" y="6" width="20" height="13" rx="2"/><circle cx="12" cy="12.5" r="3"/><path d="M6 6V4.5a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1V6"/>'},
+    {id:'arrivages', label:'Arrivages', num:'08', icon:'<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/><path d="M3 8l9 5 9-5"/>'},
   ];
-  const colors = {dashboard:'var(--gold)',stock:'var(--rose)',commandes:'var(--gold)',clients:'var(--teal)',finances:'var(--green)',depenses:'var(--terracotta)',caisse:'var(--gold)'};
+  const colors = {dashboard:'var(--gold)',stock:'var(--rose)',commandes:'var(--gold)',clients:'var(--teal)',finances:'var(--green)',depenses:'var(--terracotta)',caisse:'var(--gold)',arrivages:'var(--rose)'};
   document.getElementById('nav').innerHTML = items.map(i=>
     `<button class="navbtn ${view===i.id?'active':''}" style="${view===i.id?`color:${colors[i.id]}`:''}" onclick="setView('${i.id}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${i.icon}</svg> ${i.label}<span class="num">${i.num}</span></button>`
   ).join('');
@@ -324,6 +328,7 @@ function render(){
   else if(view==='finances') main.innerHTML = renderFinances();
   else if(view==='depenses') main.innerHTML = renderDepenses();
   else if(view==='caisse') main.innerHTML = renderCaisse();
+  else if(view==='arrivages') main.innerHTML = renderArrivages();
 }
 
 function renderDashboard(){
@@ -381,7 +386,7 @@ function renderCommandes(){
     <div class="viewhead"><div><div class="eyebrow">Ventes</div><h2>Commandes</h2></div><button class="btn" onclick="openOrderForm()">+ Nouvelle commande</button></div>
     <div class="panel">
       ${list.length===0 ? '<div class="empty">Aucune commande. Ajoute la première.</div>' : `
-      <table><thead><tr><th>Date</th><th>Client</th><th>Tél.</th><th>Produit</th><th>Qté</th><th>Total</th><th>Paiement</th><th>Statut</th><th></th></tr></thead>
+      <table><thead><tr><th>Date</th><th>Client</th><th>Tél.</th><th>Produit</th><th>Qté</th><th>Total</th><th>Paiement</th><th>Arrivage</th><th>Statut</th><th></th></tr></thead>
       <tbody>${list.map(c=>`<tr>
         <td class="mono">${c.date}</td>
         <td>${c.clientNom}</td>
@@ -390,6 +395,7 @@ function renderCommandes(){
         <td class="mono">${c.quantite}</td>
         <td class="mono">${fmt(c.quantite*c.prixUnitaire)}</td>
         <td>${c.modePaiement}</td>
+        <td>${arrivageNom(c.arrivageId)}</td>
         <td><select class="statusselect" onchange="updateStatut('${c.id}',this.value)">${STATUTS.map(s=>`<option ${s===c.statut?'selected':''}>${s}</option>`).join('')}</select></td>
         <td><button class="btn ghost" onclick="deleteOrder('${c.id}')">Suppr.</button></td>
       </tr>`).join('')}</tbody></table>`}
@@ -412,59 +418,207 @@ function deleteOrder(id){
   render();
 }
 
+let orderForm = null;
+
 function openOrderForm(){
+  orderForm = { nom:'', tel:'', quartier:'', paiement: PAIEMENTS[0], lignes:[{produit:PRODUITS[0], couleur:COULEURS[0], qty:1, prix:10000}] };
+  renderOrderForm();
+  document.getElementById('overlay').classList.add('open');
+}
+
+function addLine(){
+  orderForm.lignes.push({produit:PRODUITS[0], couleur:COULEURS[0], qty:1, prix:10000});
+  renderOrderForm();
+}
+
+function removeLine(i){
+  orderForm.lignes.splice(i,1);
+  renderOrderForm();
+}
+
+function updateLine(i, field, val){
+  orderForm.lignes[i][field] = (field==='qty'||field==='prix') ? (parseInt(val)||0) : val;
+  renderOrderForm();
+}
+
+function renderOrderForm(){
+  const total = orderForm.lignes.reduce((s,l)=> s + l.qty*l.prix, 0);
   document.getElementById('modalBody').innerHTML = `
     <h3>Nouvelle commande</h3>
     <div class="field-row">
-      <div class="field"><label>Nom du client</label><input id="f-nom" placeholder="Ex: Awa Diop"></div>
-      <div class="field"><label>Téléphone</label><input id="f-tel" placeholder="77 000 00 00"></div>
+      <div class="field"><label>Nom du client</label><input value="${orderForm.nom}" oninput="orderForm.nom=this.value" placeholder="Ex: Awa Diop"></div>
+      <div class="field"><label>Téléphone</label><input value="${orderForm.tel}" oninput="orderForm.tel=this.value" placeholder="77 000 00 00"></div>
     </div>
-    <div class="field"><label>Quartier / ville</label><input id="f-quartier" placeholder="Ex: Fadiouth, Thiès"></div>
-    <div class="field-row">
-      <div class="field"><label>Produit</label><select id="f-produit">${PRODUITS.map(p=>`<option>${p}</option>`).join('')}</select></div>
-      <div class="field"><label>Coloris</label><select id="f-couleur">${COULEURS.map(c=>`<option>${c}</option>`).join('')}</select></div>
-    </div>
-    <div class="field-row">
-      <div class="field"><label>Quantité</label><input id="f-qty" type="number" min="1" value="1"></div>
-      <div class="field"><label>Prix unitaire (FCFA)</label><input id="f-prix" type="number" value="10000"></div>
-    </div>
-    <div class="field"><label>Mode de paiement</label><select id="f-paiement">${PAIEMENTS.map(p=>`<option>${p}</option>`).join('')}</select></div>
+    <div class="field"><label>Quartier / ville</label><input value="${orderForm.quartier}" oninput="orderForm.quartier=this.value" placeholder="Ex: Fadiouth, Thiès"></div>
+    <div class="hint" style="margin:12px 0 6px;">Articles (${orderForm.lignes.length})</div>
+    ${orderForm.lignes.map((l,i)=>`
+      <div style="border:1px solid var(--line);border-radius:var(--radius);padding:10px 10px 0;margin-bottom:10px;">
+        <div class="field-row">
+          <div class="field"><label>Produit</label><select onchange="updateLine(${i},'produit',this.value)">${PRODUITS.map(p=>`<option ${p===l.produit?'selected':''}>${p}</option>`).join('')}</select></div>
+          <div class="field"><label>Coloris</label><select onchange="updateLine(${i},'couleur',this.value)">${COULEURS.map(c=>`<option ${c===l.couleur?'selected':''}>${c}</option>`).join('')}</select></div>
+        </div>
+        <div class="field-row" style="align-items:flex-end;">
+          <div class="field"><label>Quantité</label><input type="number" min="1" value="${l.qty}" onchange="updateLine(${i},'qty',this.value)"></div>
+          <div class="field"><label>Prix unitaire (FCFA)</label><input type="number" value="${l.prix}" onchange="updateLine(${i},'prix',this.value)"></div>
+          ${orderForm.lignes.length>1 ? `<button class="btn ghost" onclick="removeLine(${i})" style="margin-bottom:14px;">Retirer</button>` : ''}
+        </div>
+      </div>
+    `).join('')}
+    <button class="btn ghost" onclick="addLine()">+ Ajouter un t-shirt</button>
+    <div class="field" style="margin-top:14px;"><label>Mode de paiement</label><select onchange="orderForm.paiement=this.value">${PAIEMENTS.map(p=>`<option ${p===orderForm.paiement?'selected':''}>${p}</option>`).join('')}</select></div>
+    <div class="hint" style="margin-top:8px;">Total : <strong class="mono">${fmt(total)}</strong> FCFA — ${orderForm.lignes.length} article(s)</div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Annuler</button>
       <button class="btn" onclick="submitOrder()">Enregistrer</button>
     </div>
   `;
-  document.getElementById('overlay').classList.add('open');
 }
 
 function closeModal(){ document.getElementById('overlay').classList.remove('open'); }
 
 function submitOrder(){
-  const nom = document.getElementById('f-nom').value.trim();
-  const tel = document.getElementById('f-tel').value.trim();
-  const quartier = document.getElementById('f-quartier').value.trim();
-  const produit = document.getElementById('f-produit').value;
-  const couleur = document.getElementById('f-couleur').value;
-  const qty = Math.max(1, parseInt(document.getElementById('f-qty').value)||1);
-  const prix = Math.max(0, parseInt(document.getElementById('f-prix').value)||0);
-  const paiement = document.getElementById('f-paiement').value;
+  const nom = orderForm.nom.trim();
+  const tel = orderForm.tel.trim();
+  const quartier = orderForm.quartier.trim();
   if(!nom || !tel){ showToast("Nom et téléphone requis"); return; }
+  if(orderForm.lignes.length===0){ showToast("Ajoute au moins un article"); return; }
 
-  const dispo = state.stock[produit][couleur]||0;
-  if(qty > dispo){ if(!confirm(`Stock disponible: ${dispo}. Continuer quand même ?`)) return; }
-
-  state.commandes.push({
-    id: Date.now().toString(),
-    date: new Date().toISOString().slice(0,10),
-    clientNom: nom, clientTel: tel, quartier,
-    produit, couleur, quantite: qty, prixUnitaire: prix,
-    modePaiement: paiement, statut: "Reçue"
+  let stockInsuffisant = false;
+  orderForm.lignes.forEach(l=>{
+    const dispo = state.stock[l.produit][l.couleur]||0;
+    if(l.qty > dispo) stockInsuffisant = true;
   });
-  state.stock[produit][couleur] = Math.max(0, dispo - qty);
+  if(stockInsuffisant){ if(!confirm("Le stock est insuffisant pour un ou plusieurs articles. Continuer quand même ?")) return; }
+
+  const dateNow = new Date().toISOString().slice(0,10);
+  orderForm.lignes.forEach(l=>{
+    state.commandes.push({
+      id: Date.now().toString() + Math.random().toString(36).slice(2,7),
+      date: dateNow,
+      arrivageId: state.arrivageActif,
+      clientNom: nom, clientTel: tel, quartier,
+      produit: l.produit, couleur: l.couleur, quantite: l.qty, prixUnitaire: l.prix,
+      modePaiement: orderForm.paiement, statut: "Reçue"
+    });
+    state.stock[l.produit][l.couleur] = Math.max(0, (state.stock[l.produit][l.couleur]||0) - l.qty);
+  });
   saveState();
   closeModal();
   render();
-  showToast("Commande enregistrée");
+  showToast(`${orderForm.lignes.length} article(s) enregistré(s)`);
+}
+
+function arrivageNom(id){
+  const a = state.arrivages.find(x=>x.id===id);
+  return a ? a.nom : '—';
+}
+
+function renderArrivages(){
+  const arrivages = [...state.arrivages].reverse();
+  const actif = state.arrivages.find(a=>a.id===state.arrivageActif);
+  return `
+    <div class="viewhead"><div><div class="eyebrow">Suivi</div><h2>Arrivages</h2></div>
+    ${actif ? `<button class="btn" onclick="cloturerArrivage()">Clôturer « ${actif.nom} » et démarrer le suivant</button>` : ''}
+    </div>
+    <div class="hint">Chaque arrivage regroupe les commandes passées pendant cette période. Clôture l'arrivage en cours pour générer son rapport et en démarrer un nouveau.</div>
+    <div class="panel">
+      <table><thead><tr><th>Arrivage</th><th>Statut</th><th>Commandes</th><th>Qté vendue</th><th>CA</th><th></th></tr></thead>
+      <tbody>${arrivages.map(a=>{
+        const cs = state.commandes.filter(c=>c.arrivageId===a.id && c.statut!=='Annulée');
+        const qty = cs.reduce((s,c)=>s+c.quantite,0);
+        const ca = cs.reduce((s,c)=>s+c.quantite*c.prixUnitaire,0);
+        return `<tr>
+          <td>${a.nom}${a.id===state.arrivageActif?' <span class="pill s4">actif</span>':' <span class="pill s2">clôturé</span>'}</td>
+          <td>${a.statut}</td>
+          <td class="mono">${cs.length}</td>
+          <td class="mono">${qty}</td>
+          <td class="mono">${fmt(ca)}</td>
+          <td><button class="btn ghost" onclick="openArrivageReport('${a.id}')">Rapport</button></td>
+        </tr>`;
+      }).join('')}</tbody></table>
+    </div>
+  `;
+}
+
+function cloturerArrivage(){
+  const actif = state.arrivages.find(a=>a.id===state.arrivageActif);
+  if(!actif) return;
+  if(!confirm(`Clôturer « ${actif.nom} » et démarrer un nouvel arrivage ?`)) return;
+  actif.statut = "clôturé";
+  const n = state.arrivages.length + 1;
+  const nom = n===1 ? "1er arrivage" : `${n}e arrivage`;
+  const newId = "arrivage-" + Date.now();
+  state.arrivages.push({id:newId, nom, statut:"actif"});
+  state.arrivageActif = newId;
+  saveState();
+  render();
+  showToast(`${nom} démarré`);
+}
+
+function openArrivageReport(id){
+  const a = state.arrivages.find(x=>x.id===id);
+  if(!a) return;
+  const cs = state.commandes.filter(c=>c.arrivageId===id && c.statut!=='Annulée');
+  const qty = cs.reduce((s,c)=>s+c.quantite,0);
+  const ca = cs.reduce((s,c)=>s+c.quantite*c.prixUnitaire,0);
+  const cout = cs.reduce((s,c)=>s+c.quantite*(state.settings.coutUnitaire||0),0);
+  const benefice = ca - cout;
+  const parProduit = {};
+  PRODUITS.forEach(p=>parProduit[p]={qty:0,ca:0});
+  cs.forEach(c=>{ parProduit[c.produit].qty += c.quantite; parProduit[c.produit].ca += c.quantite*c.prixUnitaire; });
+
+  document.getElementById('modalBody').innerHTML = `
+    <h3>Rapport — ${a.nom}</h3>
+    <div class="kpis" style="grid-template-columns:repeat(2,1fr);">
+      <div class="kpi c-gold"><div class="label">Chiffre d'affaires</div><div class="value mono">${fmt(ca)}</div></div>
+      <div class="kpi c-green"><div class="label">Bénéfice estimé</div><div class="value mono">${fmt(benefice)}</div></div>
+      <div class="kpi c-terracotta"><div class="label">Unités vendues</div><div class="value mono">${qty}</div></div>
+      <div class="kpi c-teal"><div class="label">Commandes</div><div class="value mono">${cs.length}</div></div>
+    </div>
+    <div class="panel-title" style="margin-top:14px;">Détail par modèle</div>
+    <table><thead><tr><th>Modèle</th><th>Qté</th><th>CA</th></tr></thead>
+    <tbody>${PRODUITS.map(p=>`<tr><td>${p}</td><td class="mono">${parProduit[p].qty}</td><td class="mono">${fmt(parProduit[p].ca)}</td></tr>`).join('')}</tbody></table>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Fermer</button>
+      <button class="btn" onclick="telechargerRapport('${id}')">Télécharger le rapport</button>
+    </div>
+  `;
+  document.getElementById('overlay').classList.add('open');
+}
+
+function telechargerRapport(id){
+  const a = state.arrivages.find(x=>x.id===id);
+  if(!a) return;
+  const cs = state.commandes.filter(c=>c.arrivageId===id && c.statut!=='Annulée');
+  const qty = cs.reduce((s,c)=>s+c.quantite,0);
+  const ca = cs.reduce((s,c)=>s+c.quantite*c.prixUnitaire,0);
+  const cout = cs.reduce((s,c)=>s+c.quantite*(state.settings.coutUnitaire||0),0);
+  const benefice = ca - cout;
+  const parProduit = {};
+  PRODUITS.forEach(p=>parProduit[p]={qty:0,ca:0});
+  cs.forEach(c=>{ parProduit[c.produit].qty += c.quantite; parProduit[c.produit].ca += c.quantite*c.prixUnitaire; });
+
+  let txt = "TCH GESTION — RAPPORT D'ARRIVAGE\n";
+  txt += `${a.nom} (${a.statut})\n`;
+  txt += `Généré le ${new Date().toLocaleDateString('fr-FR')}\n\n`;
+  txt += `Chiffre d'affaires : ${fmt(ca)} FCFA\n`;
+  txt += `Bénéfice estimé : ${fmt(benefice)} FCFA\n`;
+  txt += `Unités vendues : ${qty}\n`;
+  txt += `Commandes : ${cs.length}\n\n`;
+  txt += "Détail par modèle :\n";
+  PRODUITS.forEach(p=>{ txt += `- ${p} : ${parProduit[p].qty} unités — ${fmt(parProduit[p].ca)} FCFA\n`; });
+  txt += "\nDétail des commandes :\n";
+  cs.forEach(c=>{ txt += `${c.date} — ${c.clientNom} (${c.clientTel}) — ${c.produit} ${c.couleur} x${c.quantite} — ${fmt(c.quantite*c.prixUnitaire)} FCFA — ${c.modePaiement}\n`; });
+
+  const blob = new Blob([txt], {type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `rapport-${a.nom.replace(/\s+/g,'-').toLowerCase()}.txt`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 function renderClients(){
