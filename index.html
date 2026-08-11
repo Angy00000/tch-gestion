@@ -645,7 +645,7 @@ function getRapportData(id){
 }
 
 function openArrivageReport(id){
-  const {a, cs, ds, qty, ca, totalDepenses, benefice, parProduit, parCategorie} = getRapportData(id);
+  const {a, cs, ds, qty, ca, totalDepenses, benefice, parProduit} = getRapportData(id);
   if(!a) return;
 
   document.getElementById('modalBody').innerHTML = `
@@ -656,60 +656,34 @@ function openArrivageReport(id){
       <div class="kpi c-green"><div class="label">Bénéfice net</div><div class="value mono">${fmt(benefice)}</div></div>
       <div class="kpi c-teal"><div class="label">Unités vendues</div><div class="value mono">${qty}</div></div>
     </div>
-    <div class="panel-title" style="margin-top:14px;">Détail par modèle</div>
+    <div class="panel-title" style="margin-top:14px;">Ventes par modèle</div>
     <table><thead><tr><th>Modèle</th><th>Qté</th><th>CA</th></tr></thead>
     <tbody>${PRODUITS.map(p=>`<tr><td>${p}</td><td class="mono">${parProduit[p].qty}</td><td class="mono">${fmt(parProduit[p].ca)}</td></tr>`).join('')}</tbody></table>
-    <div class="panel-title" style="margin-top:14px;">Dépenses par catégorie</div>
-    <table><thead><tr><th>Catégorie</th><th>Montant</th></tr></thead>
-    <tbody>${ds.length===0 ? `<tr><td colspan="2" style="color:var(--text-faint);">Aucune dépense enregistrée sur cette vague</td></tr>` : CATEGORIES_DEPENSES.filter(cat=>parCategorie[cat]>0).map(cat=>`<tr><td>${cat}</td><td class="mono">${fmt(parCategorie[cat])}</td></tr>`).join('')}</tbody></table>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Fermer</button>
-      <button class="btn" onclick="telechargerRapport('${id}')">Télécharger le rapport complet</button>
+      <button class="btn" onclick="telechargerRapport('${id}')">Télécharger le résumé</button>
     </div>
   `;
   document.getElementById('overlay').classList.add('open');
 }
 
 function telechargerRapport(id){
-  const {a, cs, ds, qty, ca, totalDepenses, benefice, parProduit, parCategorie, parPaiement} = getRapportData(id);
+  const {a, qty, ca, totalDepenses, benefice, parProduit} = getRapportData(id);
   if(!a) return;
 
-  let txt = "TCH GESTION — RAPPORT DE VAGUE\n";
+  let txt = "TCH GESTION — RÉSUMÉ DE VAGUE\n";
   txt += "========================================\n";
   txt += `${a.nom} (${a.statut})\n`;
   txt += `Généré le ${new Date().toLocaleDateString('fr-FR')}\n\n`;
 
-  txt += "RÉSUMÉ FINANCIER\n";
-  txt += "----------------------------------------\n";
   txt += `Chiffre d'affaires : ${fmt(ca)} FCFA\n`;
   txt += `Total des dépenses : ${fmt(totalDepenses)} FCFA\n`;
   txt += `Bénéfice net : ${fmt(benefice)} FCFA\n`;
-  txt += `Unités vendues : ${qty}\n`;
-  txt += `Nombre de commandes : ${cs.length}\n`;
-  txt += `Nombre de dépenses : ${ds.length}\n\n`;
+  txt += `Unités vendues : ${qty}\n\n`;
 
   txt += "VENTES PAR MODÈLE\n";
   txt += "----------------------------------------\n";
   PRODUITS.forEach(p=>{ txt += `- ${p} : ${parProduit[p].qty} unités — ${fmt(parProduit[p].ca)} FCFA\n`; });
-
-  txt += "\nVENTES PAR MODE DE PAIEMENT\n";
-  txt += "----------------------------------------\n";
-  PAIEMENTS.forEach(p=>{ if(parPaiement[p]>0) txt += `- ${p} : ${fmt(parPaiement[p])} FCFA\n`; });
-
-  txt += "\nDÉPENSES PAR CATÉGORIE\n";
-  txt += "----------------------------------------\n";
-  if(ds.length===0){ txt += "Aucune dépense enregistrée sur cette vague.\n"; }
-  else { CATEGORIES_DEPENSES.forEach(cat=>{ if(parCategorie[cat]>0) txt += `- ${cat} : ${fmt(parCategorie[cat])} FCFA\n`; }); }
-
-  txt += "\nDÉTAIL DES COMMANDES\n";
-  txt += "----------------------------------------\n";
-  if(cs.length===0){ txt += "Aucune commande sur cette vague.\n"; }
-  else { cs.forEach(c=>{ txt += `${c.date} — ${c.clientNom} (${c.clientTel}${c.quartier? ', '+c.quartier:''}) — ${c.produit} ${c.couleur} x${c.quantite} — ${fmt(c.quantite*c.prixUnitaire)} FCFA — ${c.modePaiement} — ${c.statut}\n`; }); }
-
-  txt += "\nDÉTAIL DES DÉPENSES\n";
-  txt += "----------------------------------------\n";
-  if(ds.length===0){ txt += "Aucune dépense sur cette vague.\n"; }
-  else { ds.forEach(d=>{ txt += `${d.date} — ${d.categorie} — ${fmt(d.montant)} FCFA${d.note? ' — '+d.note:''}\n`; }); }
 
   const blob = new Blob([txt], {type:'text/plain;charset=utf-8'});
   const url = URL.createObjectURL(blob);
