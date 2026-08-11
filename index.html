@@ -592,13 +592,15 @@ function updateStock(p,c,val){
 }
 
 function renderCommandes(){
-  const list = [...state.commandes].sort((a,b)=> b.date.localeCompare(a.date));
+  const list = [...state.commandes].sort((a,b)=> a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   return `
     <div class="viewhead"><div><div class="eyebrow">Ventes</div><h2>Commandes</h2></div><button class="btn" onclick="openOrderForm()">+ Nouvelle commande</button></div>
+    <div class="hint">Triées par ordre chronologique (la plus ancienne en premier) pour faciliter la vérification.</div>
     <div class="panel">
       ${list.length===0 ? '<div class="empty">Aucune commande. Ajoute la première.</div>' : `
-      <table><thead><tr><th>Date</th><th>Client</th><th>Tél.</th><th>Produit</th><th>Qté</th><th>Total</th><th>Paiement</th><th>Vague</th><th>Statut</th><th></th></tr></thead>
-      <tbody>${list.map(c=>`<tr>
+      <table><thead><tr><th>N°</th><th>Date</th><th>Client</th><th>Tél.</th><th>Produit</th><th>Qté</th><th>Total</th><th>Paiement</th><th>Vague</th><th>Statut</th><th></th></tr></thead>
+      <tbody>${list.map((c,i)=>`<tr>
+        <td class="mono" style="color:var(--text-faint);">${i+1}</td>
         <td class="mono">${c.date}</td>
         <td>${c.clientNom}</td>
         <td class="mono">${c.clientTel}</td>
