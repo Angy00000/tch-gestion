@@ -460,7 +460,7 @@ function renderCommandes(){
         <td>${c.modePaiement}</td>
         <td>${arrivageNom(c.arrivageId)}</td>
         <td><select class="statusselect" onchange="updateStatut('${c.id}',this.value)">${STATUTS.map(s=>`<option ${s===c.statut?'selected':''}>${s}</option>`).join('')}</select></td>
-        <td><button class="btn ghost" onclick="deleteOrder('${c.id}')">Suppr.</button></td>
+        <td style="white-space:nowrap;"><button class="btn ghost" onclick="editOrderForm('${c.id}')">Modifier</button> <button class="btn ghost" onclick="deleteOrder('${c.id}')">Suppr.</button></td>
       </tr>`).join('')}</tbody></table>`}
     </div>
   `;
@@ -571,6 +571,66 @@ function submitOrder(){
   showToast(`${orderForm.lignes.length} article(s) enregistré(s)`);
 }
 
+function editOrderForm(id){
+  const c = state.commandes.find(o=>o.id===id);
+  if(!c) return;
+  document.getElementById('modalBody').innerHTML = `
+    <h3>Modifier la commande</h3>
+    <div class="field-row">
+      <div class="field"><label>Nom du client</label><input id="e-nom" value="${c.clientNom}"></div>
+      <div class="field"><label>Téléphone</label><input id="e-tel" value="${c.clientTel}"></div>
+    </div>
+    <div class="field"><label>Quartier / ville</label><input id="e-quartier" value="${c.quartier||''}"></div>
+    <div class="field-row">
+      <div class="field"><label>Produit</label><select id="e-produit">${PRODUITS.map(p=>`<option ${p===c.produit?'selected':''}>${p}</option>`).join('')}</select></div>
+      <div class="field"><label>Coloris</label><select id="e-couleur">${COULEURS.map(co=>`<option ${co===c.couleur?'selected':''}>${co}</option>`).join('')}</select></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Quantité</label><input id="e-qty" type="number" min="1" value="${c.quantite}"></div>
+      <div class="field"><label>Prix unitaire (FCFA)</label><input id="e-prix" type="number" value="${c.prixUnitaire}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Mode de paiement</label><select id="e-paiement">${PAIEMENTS.map(p=>`<option ${p===c.modePaiement?'selected':''}>${p}</option>`).join('')}</select></div>
+      <div class="field"><label>Statut</label><select id="e-statut">${STATUTS.map(s=>`<option ${s===c.statut?'selected':''}>${s}</option>`).join('')}</select></div>
+    </div>
+    <div class="field"><label>Vague</label><select id="e-vague">${state.arrivages.map(a=>`<option value="${a.id}" ${a.id===c.arrivageId?'selected':''}>${a.nom}</option>`).join('')}</select></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn" onclick="submitEditOrder('${id}')">Enregistrer les modifications</button>
+    </div>
+  `;
+  document.getElementById('overlay').classList.add('open');
+}
+
+function submitEditOrder(id){
+  const c = state.commandes.find(o=>o.id===id);
+  if(!c) return;
+  const nom = document.getElementById('e-nom').value.trim();
+  const tel = document.getElementById('e-tel').value.trim();
+  const quartier = document.getElementById('e-quartier').value.trim();
+  const produit = document.getElementById('e-produit').value;
+  const couleur = document.getElementById('e-couleur').value;
+  const qty = Math.max(1, parseInt(document.getElementById('e-qty').value)||1);
+  const prix = Math.max(0, parseInt(document.getElementById('e-prix').value)||0);
+  const paiement = document.getElementById('e-paiement').value;
+  const statut = document.getElementById('e-statut').value;
+  const vague = document.getElementById('e-vague').value;
+  if(!nom || !tel){ showToast("Nom et téléphone requis"); return; }
+
+  // Restore old stock, then apply new stock delta
+  state.stock[c.produit][c.couleur] = (state.stock[c.produit][c.couleur]||0) + c.quantite;
+  state.stock[produit][couleur] = Math.max(0, (state.stock[produit][couleur]||0) - qty);
+
+  c.clientNom = nom; c.clientTel = tel; c.quartier = quartier;
+  c.produit = produit; c.couleur = couleur; c.quantite = qty; c.prixUnitaire = prix;
+  c.modePaiement = paiement; c.statut = statut; c.arrivageId = vague;
+
+  saveState();
+  closeModal();
+  render();
+  showToast("Commande modifiée");
+}
+
 function totalStockRestant(){
   let total = 0;
   PRODUITS.forEach(p=> COULEURS.forEach(c=>{ total += state.stock[p][c]||0; }));
@@ -602,7 +662,7 @@ function renderArrivages(){
           <td class="mono">${fmt(r.ca)}</td>
           <td class="mono">${fmt(r.totalDepenses)}</td>
           <td class="mono">${fmt(r.benefice)}</td>
-          <td><button class="btn ghost" onclick="openArrivageReport('${a.id}')">Rapport</button></td>
+          <td style="white-space:nowrap;"><button class="btn ghost" onclick="renameArrivage('${a.id}')">Renommer</button> <button class="btn ghost" onclick="openArrivageReport('${a.id}')">Rapport</button></td>
         </tr>`;
       }).join('')}</tbody></table>
     </div>
@@ -622,6 +682,19 @@ function cloturerArrivage(){
   saveState();
   render();
   showToast(`${nom} démarré`);
+}
+
+function renameArrivage(id){
+  const a = state.arrivages.find(x=>x.id===id);
+  if(!a) return;
+  const nouveauNom = prompt("Nouveau nom de la vague :", a.nom);
+  if(nouveauNom===null) return;
+  const trimmed = nouveauNom.trim();
+  if(!trimmed){ showToast("Le nom ne peut pas être vide"); return; }
+  a.nom = trimmed;
+  saveState();
+  render();
+  showToast("Vague renommée");
 }
 
 function getRapportData(id){
@@ -789,7 +862,7 @@ function renderDepenses(){
           <td><span class="catpill" style="background:color-mix(in srgb, ${CATEGORIE_COLOR[d.categorie]} 16%, transparent);color:${CATEGORIE_COLOR[d.categorie]}"><span class="dot" style="background:${CATEGORIE_COLOR[d.categorie]}"></span>${d.categorie}</span></td>
           <td>${d.note||'—'}</td>
           <td class="mono">${fmt(d.montant)}</td>
-          <td><button class="btn ghost" onclick="deleteExpense('${d.id}')">Suppr.</button></td>
+          <td style="white-space:nowrap;"><button class="btn ghost" onclick="editExpenseForm('${d.id}')">Modifier</button> <button class="btn ghost" onclick="deleteExpense('${d.id}')">Suppr.</button></td>
         </tr>`).join('')}</tbody></table>`}
       </div>
     `).join('')}
@@ -824,6 +897,42 @@ function submitExpense(){
   closeModal();
   render();
   showToast("Dépense enregistrée");
+}
+
+function editExpenseForm(id){
+  const d = state.depenses.find(x=>x.id===id);
+  if(!d) return;
+  document.getElementById('modalBody').innerHTML = `
+    <h3>Modifier la dépense</h3>
+    <div class="field"><label>Catégorie</label><select id="d-categorie">${CATEGORIES_DEPENSES.map(c=>`<option ${c===d.categorie?'selected':''}>${c}</option>`).join('')}</select></div>
+    <div class="field-row">
+      <div class="field"><label>Montant (FCFA)</label><input id="d-montant" type="number" min="0" value="${d.montant}"></div>
+      <div class="field"><label>Date</label><input id="d-date" type="date" value="${d.date}"></div>
+    </div>
+    <div class="field"><label>Note (optionnel)</label><input id="d-note" value="${d.note||''}"></div>
+    <div class="field"><label>Vague</label><select id="d-vague">${state.arrivages.map(a=>`<option value="${a.id}" ${a.id===d.arrivageId?'selected':''}>${a.nom}</option>`).join('')}</select></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn" onclick="submitEditExpense('${id}')">Enregistrer les modifications</button>
+    </div>
+  `;
+  document.getElementById('overlay').classList.add('open');
+}
+
+function submitEditExpense(id){
+  const d = state.depenses.find(x=>x.id===id);
+  if(!d) return;
+  const montant = Math.max(0, parseInt(document.getElementById('d-montant').value)||0);
+  if(montant<=0){ showToast("Indique un montant valide"); return; }
+  d.categorie = document.getElementById('d-categorie').value;
+  d.montant = montant;
+  d.date = document.getElementById('d-date').value || d.date;
+  d.note = document.getElementById('d-note').value.trim();
+  d.arrivageId = document.getElementById('d-vague').value;
+  saveState();
+  closeModal();
+  render();
+  showToast("Dépense modifiée");
 }
 
 function deleteExpense(id){
@@ -862,7 +971,7 @@ function renderCaisse(){
         <td><span class="pill ${m.type==='entree'?'s4':'s5'}">${m.type==='entree'?'Entrée':'Sortie'}</span></td>
         <td>${m.motif||'—'}</td>
         <td class="mono" style="color:${m.type==='entree'?'var(--green)':'var(--terracotta)'}">${m.type==='entree'?'+':'−'} ${fmt(m.montant)}</td>
-        <td><button class="btn ghost" onclick="deleteCaisseMouvement('${m.id}')">Suppr.</button></td>
+        <td style="white-space:nowrap;"><button class="btn ghost" onclick="editCaisseForm('${m.id}')">Modifier</button> <button class="btn ghost" onclick="deleteCaisseMouvement('${m.id}')">Suppr.</button></td>
       </tr>`).join('')}</tbody></table>`}
     </div>
   `;
@@ -894,6 +1003,40 @@ function submitCaisseMouvement(type){
   closeModal();
   render();
   showToast(type==='entree' ? "Entrée enregistrée" : "Sortie enregistrée");
+}
+
+function editCaisseForm(id){
+  const m = state.caisse.find(x=>x.id===id);
+  if(!m) return;
+  document.getElementById('modalBody').innerHTML = `
+    <h3>Modifier le mouvement</h3>
+    <div class="field"><label>Type</label><select id="m-type"><option value="entree" ${m.type==='entree'?'selected':''}>Entrée</option><option value="sortie" ${m.type==='sortie'?'selected':''}>Sortie</option></select></div>
+    <div class="field-row">
+      <div class="field"><label>Montant (FCFA)</label><input id="m-montant" type="number" min="0" value="${m.montant}"></div>
+      <div class="field"><label>Date</label><input id="m-date" type="date" value="${m.date}"></div>
+    </div>
+    <div class="field"><label>Motif</label><input id="m-motif" value="${m.motif||''}"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn" onclick="submitEditCaisse('${id}')">Enregistrer les modifications</button>
+    </div>
+  `;
+  document.getElementById('overlay').classList.add('open');
+}
+
+function submitEditCaisse(id){
+  const m = state.caisse.find(x=>x.id===id);
+  if(!m) return;
+  const montant = Math.max(0, parseInt(document.getElementById('m-montant').value)||0);
+  if(montant<=0){ showToast("Indique un montant valide"); return; }
+  m.type = document.getElementById('m-type').value;
+  m.montant = montant;
+  m.date = document.getElementById('m-date').value || m.date;
+  m.motif = document.getElementById('m-motif').value.trim();
+  saveState();
+  closeModal();
+  render();
+  showToast("Mouvement modifié");
 }
 
 function deleteCaisseMouvement(id){
