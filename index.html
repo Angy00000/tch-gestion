@@ -1040,11 +1040,14 @@ function submitExpense(){
   const date = document.getElementById('d-date').value || new Date().toISOString().slice(0,10);
   const note = document.getElementById('d-note').value.trim();
   if(montant<=0){ showToast("Indique un montant valide"); return; }
-  state.depenses.push({ id: Date.now().toString(), date, categorie, montant, note, arrivageId: state.arrivageActif });
+  const depenseId = Date.now().toString();
+  const caisseId = depenseId + '-c';
+  state.depenses.push({ id: depenseId, date, categorie, montant, note, arrivageId: state.arrivageActif, caisseId });
+  state.caisse.push({ id: caisseId, date, type: 'sortie', montant, motif: note || categorie, depenseId });
   saveState();
   closeModal();
   render();
-  showToast("Dépense enregistrée");
+  showToast("Dépense enregistrée — sortie de caisse créée automatiquement");
 }
 
 function editExpenseForm(id){
@@ -1077,14 +1080,28 @@ function submitEditExpense(id){
   d.date = document.getElementById('d-date').value || d.date;
   d.note = document.getElementById('d-note').value.trim();
   d.arrivageId = document.getElementById('d-vague').value;
+
+  if(!d.caisseId){
+    const caisseId = d.id + '-c';
+    state.caisse.push({ id: caisseId, date: d.date, type: 'sortie', montant: d.montant, motif: d.note || d.categorie, depenseId: d.id });
+    d.caisseId = caisseId;
+  } else {
+    const m = state.caisse.find(x=>x.id===d.caisseId);
+    if(m){ m.date = d.date; m.montant = d.montant; m.motif = d.note || d.categorie; }
+  }
+
   saveState();
   closeModal();
   render();
-  showToast("Dépense modifiée");
+  showToast("Dépense modifiée — caisse synchronisée");
 }
 
 function deleteExpense(id){
-  if(!confirm("Supprimer cette dépense ?")) return;
+  if(!confirm("Supprimer cette dépense ? La sortie de caisse liée sera aussi supprimée.")) return;
+  const d = state.depenses.find(x=>x.id===id);
+  if(d && d.caisseId){
+    state.caisse = state.caisse.filter(m=>m.id!==d.caisseId);
+  }
   state.depenses = state.depenses.filter(d=>d.id!==id);
   saveState();
   render();
@@ -1117,7 +1134,7 @@ function renderCaisse(){
       <tbody>${list.map(m=>`<tr>
         <td class="mono">${m.date}</td>
         <td><span class="pill ${m.type==='entree'?'s4':'s5'}">${m.type==='entree'?'Entrée':'Sortie'}</span></td>
-        <td>${m.motif||'—'}</td>
+        <td>${m.motif||'—'}${m.depenseId?' <span class="pill s2" title="Lié à une dépense">auto</span>':''}</td>
         <td class="mono" style="color:${m.type==='entree'?'var(--green)':'var(--terracotta)'}">${m.type==='entree'?'+':'−'} ${fmt(m.montant)}</td>
         <td style="white-space:nowrap;"><button class="btn ghost" onclick="editCaisseForm('${m.id}')">Modifier</button> <button class="btn ghost" onclick="deleteCaisseMouvement('${m.id}')">Suppr.</button></td>
       </tr>`).join('')}</tbody></table>`}
@@ -1158,7 +1175,8 @@ function editCaisseForm(id){
   if(!m) return;
   document.getElementById('modalBody').innerHTML = `
     <h3>Modifier le mouvement</h3>
-    <div class="field"><label>Type</label><select id="m-type"><option value="entree" ${m.type==='entree'?'selected':''}>Entrée</option><option value="sortie" ${m.type==='sortie'?'selected':''}>Sortie</option></select></div>
+    ${m.depenseId ? `<div class="hint" style="margin-top:0;">Lié à une dépense — la modification sera aussi appliquée côté Dépenses.</div>` : ''}
+    <div class="field"><label>Type</label><select id="m-type" ${m.depenseId?'disabled':''}><option value="entree" ${m.type==='entree'?'selected':''}>Entrée</option><option value="sortie" ${m.type==='sortie'?'selected':''}>Sortie</option></select></div>
     <div class="field-row">
       <div class="field"><label>Montant (FCFA)</label><input id="m-montant" type="number" min="0" value="${m.montant}"></div>
       <div class="field"><label>Date</label><input id="m-date" type="date" value="${m.date}"></div>
@@ -1177,19 +1195,30 @@ function submitEditCaisse(id){
   if(!m) return;
   const montant = Math.max(0, parseInt(document.getElementById('m-montant').value)||0);
   if(montant<=0){ showToast("Indique un montant valide"); return; }
-  m.type = document.getElementById('m-type').value;
+  if(!m.depenseId) m.type = document.getElementById('m-type').value;
   m.montant = montant;
   m.date = document.getElementById('m-date').value || m.date;
   m.motif = document.getElementById('m-motif').value.trim();
+
+  if(m.depenseId){
+    const d = state.depenses.find(x=>x.id===m.depenseId);
+    if(d){ d.montant = m.montant; d.date = m.date; d.note = m.motif; }
+  }
+
   saveState();
   closeModal();
   render();
-  showToast("Mouvement modifié");
+  showToast(m.depenseId ? "Mouvement modifié — dépense synchronisée" : "Mouvement modifié");
 }
 
 function deleteCaisseMouvement(id){
-  if(!confirm("Supprimer ce mouvement de caisse ?")) return;
-  state.caisse = state.caisse.filter(m=>m.id!==id);
+  const m = state.caisse.find(x=>x.id===id);
+  const msg = (m && m.depenseId) ? "Ce mouvement est lié à une dépense. Supprimer les deux ?" : "Supprimer ce mouvement de caisse ?";
+  if(!confirm(msg)) return;
+  if(m && m.depenseId){
+    state.depenses = state.depenses.filter(d=>d.id!==m.depenseId);
+  }
+  state.caisse = state.caisse.filter(x=>x.id!==id);
   saveState();
   render();
 }
