@@ -204,7 +204,7 @@ const CATEGORIE_COLOR = {
 };
 const SEUIL_BAS = 3;
 
-let state = { stock:{}, commandes:[], depenses:[], caisse:[], settings:{coutUnitaire:4000}, arrivages:[{id:"arrivage-1", nom:"1er arrivage", statut:"actif"}], arrivageActif:"arrivage-1" };
+let state = { stock:{}, commandes:[], depenses:[], caisse:[], settings:{coutUnitaire:4000}, arrivages:[{id:"arrivage-1", nom:"1ère vague", statut:"actif"}], arrivageActif:"arrivage-1" };
 let view = "dashboard";
 
 function defaultStock(){
@@ -245,7 +245,7 @@ async function loadState(){
   if(!state.depenses) state.depenses = [];
   if(!state.caisse) state.caisse = [];
   if(!state.settings) state.settings = {coutUnitaire:4000};
-  if(!state.arrivages || state.arrivages.length===0) state.arrivages = [{id:"arrivage-1", nom:"1er arrivage", statut:"actif"}];
+  if(!state.arrivages || state.arrivages.length===0) state.arrivages = [{id:"arrivage-1", nom:"1ère vague", statut:"actif"}];
   if(!state.arrivageActif) state.arrivageActif = state.arrivages[state.arrivages.length-1].id;
   state.commandes.forEach(c=>{ if(!c.arrivageId) c.arrivageId = state.arrivages[0].id; });
   render();
@@ -298,7 +298,7 @@ function renderNav(){
     {id:'finances', label:'Finances', num:'05', icon:'<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.3c0-1.1 1.1-2 2.5-2s2.5.7 2.5 1.8c0 2.6-5 1.2-5 3.8 0 1.1 1.1 1.9 2.5 1.9s2.5-.8 2.5-1.9"/>'},
     {id:'depenses', label:'Dépenses', num:'06', icon:'<path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M8.5 8h7M8.5 11.5h7M8.5 15h4"/>'},
     {id:'caisse', label:'Caisse', num:'07', icon:'<rect x="2" y="6" width="20" height="13" rx="2"/><circle cx="12" cy="12.5" r="3"/><path d="M6 6V4.5a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1V6"/>'},
-    {id:'arrivages', label:'Arrivages', num:'08', icon:'<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/><path d="M3 8l9 5 9-5"/>'},
+    {id:'arrivages', label:'Vagues', num:'08', icon:'<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/><path d="M3 8l9 5 9-5"/>'},
   ];
   const colors = {dashboard:'var(--gold)',stock:'var(--rose)',commandes:'var(--gold)',clients:'var(--teal)',finances:'var(--green)',depenses:'var(--terracotta)',caisse:'var(--gold)',arrivages:'var(--rose)'};
   document.getElementById('nav').innerHTML = items.map(i=>
@@ -386,7 +386,7 @@ function renderCommandes(){
     <div class="viewhead"><div><div class="eyebrow">Ventes</div><h2>Commandes</h2></div><button class="btn" onclick="openOrderForm()">+ Nouvelle commande</button></div>
     <div class="panel">
       ${list.length===0 ? '<div class="empty">Aucune commande. Ajoute la première.</div>' : `
-      <table><thead><tr><th>Date</th><th>Client</th><th>Tél.</th><th>Produit</th><th>Qté</th><th>Total</th><th>Paiement</th><th>Arrivage</th><th>Statut</th><th></th></tr></thead>
+      <table><thead><tr><th>Date</th><th>Client</th><th>Tél.</th><th>Produit</th><th>Qté</th><th>Total</th><th>Paiement</th><th>Vague</th><th>Statut</th><th></th></tr></thead>
       <tbody>${list.map(c=>`<tr>
         <td class="mono">${c.date}</td>
         <td>${c.clientNom}</td>
@@ -517,12 +517,12 @@ function renderArrivages(){
   const arrivages = [...state.arrivages].reverse();
   const actif = state.arrivages.find(a=>a.id===state.arrivageActif);
   return `
-    <div class="viewhead"><div><div class="eyebrow">Suivi</div><h2>Arrivages</h2></div>
-    ${actif ? `<button class="btn" onclick="cloturerArrivage()">Clôturer « ${actif.nom} » et démarrer le suivant</button>` : ''}
+    <div class="viewhead"><div><div class="eyebrow">Suivi</div><h2>Vagues</h2></div>
+    ${actif ? `<button class="btn" onclick="cloturerArrivage()">Clôturer « ${actif.nom} » et démarrer la suivante</button>` : ''}
     </div>
-    <div class="hint">Chaque arrivage regroupe les commandes passées pendant cette période. Clôture l'arrivage en cours pour générer son rapport et en démarrer un nouveau.</div>
+    <div class="hint">Chaque vague regroupe les commandes passées pendant cette période. Clôture la vague en cours pour générer son rapport et en démarrer une nouvelle.</div>
     <div class="panel">
-      <table><thead><tr><th>Arrivage</th><th>Statut</th><th>Commandes</th><th>Qté vendue</th><th>CA</th><th></th></tr></thead>
+      <table><thead><tr><th>Vague</th><th>Statut</th><th>Commandes</th><th>Qté vendue</th><th>CA</th><th></th></tr></thead>
       <tbody>${arrivages.map(a=>{
         const cs = state.commandes.filter(c=>c.arrivageId===a.id && c.statut!=='Annulée');
         const qty = cs.reduce((s,c)=>s+c.quantite,0);
@@ -543,10 +543,10 @@ function renderArrivages(){
 function cloturerArrivage(){
   const actif = state.arrivages.find(a=>a.id===state.arrivageActif);
   if(!actif) return;
-  if(!confirm(`Clôturer « ${actif.nom} » et démarrer un nouvel arrivage ?`)) return;
+  if(!confirm(`Clôturer « ${actif.nom} » et démarrer une nouvelle vague ?`)) return;
   actif.statut = "clôturé";
   const n = state.arrivages.length + 1;
-  const nom = n===1 ? "1er arrivage" : `${n}e arrivage`;
+  const nom = n===1 ? "1ère vague" : `${n}e vague`;
   const newId = "arrivage-" + Date.now();
   state.arrivages.push({id:newId, nom, statut:"actif"});
   state.arrivageActif = newId;
@@ -598,7 +598,7 @@ function telechargerRapport(id){
   PRODUITS.forEach(p=>parProduit[p]={qty:0,ca:0});
   cs.forEach(c=>{ parProduit[c.produit].qty += c.quantite; parProduit[c.produit].ca += c.quantite*c.prixUnitaire; });
 
-  let txt = "TCH GESTION — RAPPORT D'ARRIVAGE\n";
+  let txt = "TCH GESTION — RAPPORT DE VAGUE\n";
   txt += `${a.nom} (${a.statut})\n`;
   txt += `Généré le ${new Date().toLocaleDateString('fr-FR')}\n\n`;
   txt += `Chiffre d'affaires : ${fmt(ca)} FCFA\n`;
